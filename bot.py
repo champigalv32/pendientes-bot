@@ -4,6 +4,7 @@ import base64
 import logging
 import tempfile
 from datetime import datetime
+import base64 as b64lib
 
 import anthropic
 import gspread
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 GOOGLE_SHEET_ID = os.environ["GOOGLE_SHEET_ID"]
-GOOGLE_CREDENTIALS = json.loads(os.environ["GOOGLE_CREDENTIALS"])
+GOOGLE_CREDENTIALS = json.loads(b64lib.b64decode(os.environ["GOOGLE_CREDENTIALS"]).decode())
 
 # ── Clientes ──────────────────────────────────────────────────────────────────
 claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
