@@ -7,6 +7,7 @@ from datetime import datetime
 import base64 as b64lib
 
 import anthropic
+from groq import Groq
 import gspread
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
@@ -22,11 +23,13 @@ logger = logging.getLogger(__name__)
 # ── Config desde variables de entorno ────────────────────────────────────────
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
+GROQ_API_KEY = os.environ["GROQ_API_KEY"]
 GOOGLE_SHEET_ID = os.environ["GOOGLE_SHEET_ID"]
 GOOGLE_CREDENTIALS = json.loads(b64lib.b64decode(os.environ["GOOGLE_CREDENTIALS"]).decode())
 
 # ── Clientes ──────────────────────────────────────────────────────────────────
 claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+groq_client = Groq(api_key=GROQ_API_KEY)
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -55,45 +58,21 @@ def add_pending(item: str) -> int:
 
 def process_audio(file_path: str) -> str | None:
     """
-    Manda el audio a Claude para que transcriba Y extraiga el ítem en un solo paso.
+    Transcribe el audio con Groq (Whisper) y luego extrae el ítem con Claude.
     Retorna el ítem limpio, o None si no detecta intención de agregar algo.
     """
+    # Transcribir con Groq/Whisper
     with open(file_path, "rb") as f:
-        audio_b64 = base64.standard_b64encode(f.read()).decode("utf-8")
+        transcription = groq_client.audio.transcriptions.create(
+            file=(os.path.basename(file_path), f.read()),
+            model="whisper-large-v3",
+            language="es",
+        )
+    text = transcription.text
+    logger.info(f"Transcripción: {text}")
 
-    response = claude.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=256,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "document",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "audio/ogg",
-                            "data": audio_b64,
-                        },
-                    },
-                    {
-                        "type": "text",
-                        "text": (
-                            "Transcribí este audio en español. "
-                            "Luego extraé SOLO el ítem que el usuario quiere agregar a su lista de pendientes, "
-                            "sin palabras como 'agregar', 'añadir', 'pendiente', etc. "
-                            "Si el mensaje no tiene intención de agregar algo a una lista, respondé exactamente: NO_ITEM. "
-                            "Respondé SOLO con el ítem o NO_ITEM, sin explicaciones ni texto extra."
-                        ),
-                    },
-                ],
-            }
-        ],
-    )
-
-    result = response.content[0].text.strip()
-    logger.info(f"Claude respondió: {result}")
-    return None if result == "NO_ITEM" else result
+    # Extraer ítem con Claude
+    return extract_item_from_text(text)
 
 
 def extract_item_from_text(text: str) -> str | None:
